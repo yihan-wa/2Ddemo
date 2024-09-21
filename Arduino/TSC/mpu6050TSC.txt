@@ -1,0 +1,55 @@
+#include <Wire.h>
+#include <MPU6050.h>
+
+MPU6050 mpu;
+
+const float alpha = 0.98; // 加速度计和陀螺仪融合系数
+float angleX = 0; // 初始角度
+float angleY = 0;
+//float angleZ = 0;
+
+unsigned long previousGyroMillis = 0;
+const long gyroInterval = 100; // 陀螺仪更新间隔（毫秒）
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+  mpu.initialize();
+
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 connection failed");
+    while (1);
+  }
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  if (currentMillis - previousGyroMillis >= gyroInterval) {
+    previousGyroMillis = currentMillis;
+
+    int16_t ax, ay, az;
+    int16_t gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    
+    float accelAngleX = atan2(ay, az) * 180 / PI;
+    float accelAngleY = atan2(ax, az) * 180 / PI;
+    //float accelAngleZ = atan2(ax, ay) * 180 / PI;
+    
+    float gyroRateX = gx / 65.5; // 陀螺仪的灵敏度为 65.5 LSB/°/s
+    float gyroRateY = gy / 65.5;
+    //float gyroRateZ = gz / 65.5;
+
+    float dt = gyroInterval / 1000.0; // 转换为秒
+    angleX = alpha * (angleX + gyroRateX * dt) + (1 - alpha) * accelAngleX;
+    angleY = alpha * (angleY + gyroRateY * dt) + (1 - alpha) * accelAngleY;
+    //angleZ = alpha * (angleZ + gyroRateZ * dt) + (1 - alpha) * accelAngleZ;
+    
+    // 发送角度数据到串口
+    Serial.print("Angles:");
+    Serial.print(angleX);
+    Serial.print(",");
+    Serial.println(angleY);
+   // Serial.print(",");
+  //Serial.println(angleZ);
+  }
+}

@@ -1,0 +1,122 @@
+#include <Wire.h>
+#include <MPU6050.h>
+
+MPU6050 mpu;
+
+const float alpha = 0.98; // 加速度计和陀螺仪融合系数
+const long gyroInterval = 60; // 减少陀螺仪更新间隔（毫秒）
+
+float angleX = 0; // 初始角度
+float angleY = 0;
+
+unsigned long previousJoystickMillis = 0;
+const long joystickInterval = 50; // 每 50 毫秒读取一次摇杆数据
+
+unsigned long previousGyroMillis = 0;
+
+// 按钮的引脚
+const int buttonPin = 3;  
+const int xAxisPin = A0; // X轴连接到模拟引脚A0
+const int yAxisPin = A1; // Y轴连接到模拟引脚A1
+int buttonState = HIGH;      
+int lastButtonState = HIGH;  
+
+unsigned long lastDebounceTime = 0;  
+const unsigned long debounceDelay = 50;  
+const unsigned long fireInterval = 100;  
+unsigned long lastFireTime = 0;  
+
+bool xstopSent = false; // 添加一个变量来跟踪是否已发送 Xstop 信号
+
+void setup() {
+  Serial.begin(9600);
+  Wire.begin();
+  mpu.initialize();
+
+  if (!mpu.testConnection()) {
+    Serial.println("MPU6050 connection failed");
+    while (1);
+  }
+
+  pinMode(buttonPin, INPUT);  
+  pinMode(xAxisPin, INPUT);
+  pinMode(yAxisPin, INPUT);
+
+  // 初始化角度为0
+  angleX = 0;
+  angleY = 0;
+}
+
+void loop() {
+  unsigned long currentMillis = millis();
+  
+  if (currentMillis - previousJoystickMillis >= joystickInterval) {
+    previousJoystickMillis = currentMillis;
+    
+    int xValue = analogRead(xAxisPin); // 读取X轴值
+    int yValue = analogRead(yAxisPin); // 读取Y轴值
+    
+    // 处理摇杆数据
+    if (xValue < 200) {
+      Serial.println("Left");
+      xstopSent = false; // 重置状态变量
+    } else if (xValue > 800) {
+      Serial.println("Right");
+      xstopSent = false; // 重置状态变量
+    } else if (xValue >= 200 && xValue <= 800) {
+      // 只在 xstopSent 为 false 时发送 Xstop 信号
+      if (!xstopSent) {
+        Serial.println("Xstop");
+        xstopSent = true; // 更新状态变量，防止重复发送
+      }
+    }
+  }
+
+  if (currentMillis - previousGyroMillis >= gyroInterval) {
+    previousGyroMillis = currentMillis;
+
+    int16_t ax, ay, az;
+    int16_t gx, gy, gz;
+    mpu.getMotion6(&ax, &ay, &az, &gx, &gy, &gz);
+    
+    float accelAngleX = atan2(ay, az) * 180 / PI;
+    float accelAngleY = atan2(ax, az) * 180 / PI;
+    
+    float gyroRateX = gx / 65.5;
+    float gyroRateY = gy / 65.5;
+
+    // 获取当前角度而不是逐渐变化
+    float dt = gyroInterval / 1000.0; // 转换为秒
+    angleX = accelAngleX; // 当前加速度计角度
+    angleY = accelAngleY; // 当前加速度计角度
+
+    // 发送角度数据到串口
+    Serial.print("Angles:");
+    Serial.print(angleX);
+    Serial.print(",");
+    Serial.println(angleY);
+  }
+
+  // 读取按钮状态
+  int reading = digitalRead(buttonPin);
+  
+  // 去抖动处理
+  if (reading != lastButtonState) {
+    lastDebounceTime = millis(); 
+  }
+
+  if ((millis() - lastDebounceTime) > debounceDelay) {
+    if (reading == HIGH) { 
+      if ((millis() - lastFireTime) >= fireInterval) {
+        Serial.println("Fire");
+        lastFireTime = millis(); 
+      }
+    }
+  } else {
+    if (reading == HIGH && lastButtonState == LOW) {
+      lastFireTime = millis(); 
+    }
+  }
+
+  lastButtonState = reading; 
+}
